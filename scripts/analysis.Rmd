@@ -1,0 +1,269 @@
+---
+title: "COVID and Iris Dataset Visualization"
+author: "Sushrut Gaikwad"
+date: '2025-02-16'
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+---
+
+```{r setup, include=FALSE, warning=FALSE, message=FALSE}
+library(tidyverse)
+library(plotly)
+library(maps)
+```
+
+# Part 1: Iris Dataset
+
+## Q1.1: Read the `iris.csv` file
+
+```{r}
+iris_sample <- read_csv("../data/iris.csv")
+spec(iris_sample)
+
+iris_data <- read_csv("../data/iris.csv", col_types = cols(
+  Sepal.Length = col_double(),
+  Sepal.Width = col_double(),
+  Petal.Length = col_double(),
+  Petal.Width = col_double(),
+  Species = col_factor()
+))
+```
+
+## Q1.2: Show some values
+
+```{r}
+head(iris_data)
+```
+
+## Q1.3: Histogram with `plotly`
+
+```{r}
+plot_ly(
+  data = iris_data,
+  x = ~Sepal.Length,
+  color = ~Species,
+  type = "histogram",
+  opacity = 0.6,
+  xbins = list(size = 0.3)
+) |> layout(
+  title = "Histogram of Sepal Length for Each Species",
+  xaxis = list(title = "Sepal Length"),
+  yaxis = list(title = "Count"),
+  barmode = "overlay"
+)
+```
+
+## Q1.4: Histogram with ggplot2 and ggplotly
+
+```{r}
+gg_histogram <- ggplot(iris_data, aes(x = Sepal.Length, fill = Species)) +
+  geom_histogram(alpha = 0.6, position = "identity", binwidth = 0.3) +
+  theme_minimal() +
+  labs(
+    title = "Histogram of Sepal Length for Each Species",
+    x = "Sepal Length",
+    y = "Count"
+  )
+
+ggplotly(gg_histogram)
+```
+
+## Q1.5: 2x2 Facet Histogram
+
+```{r}
+iris_long <- iris_data |>
+  pivot_longer(cols = c(Sepal.Length, Sepal.Width, Petal.Length, Petal.Width), 
+               names_to = "Metric", 
+               values_to = "Value")
+
+metrics <- unique(iris_long$Metric)
+
+plots <- lapply(seq_along(metrics), function(i) {
+  plot_ly(
+    data = filter(iris_long, Metric == metrics[i]),
+    x = ~Value,
+    color = ~Species,
+    type = "histogram",
+    opacity = 0.6,
+    showlegend = (i == 1)
+  )
+})
+
+subplot(plots[[1]], plots[[2]], plots[[3]], plots[[4]], 
+        nrows = 2, shareX = TRUE, shareY = TRUE) |>
+  layout(
+    title = "Histograms of Iris Metrics by Species",
+    showlegend = TRUE
+  )
+```
+
+## Q1.6: Which metric separates species best?
+
+Petal.Length clearly provides the best species separation.
+
+## Q1.7: 2x2 Box Plot
+
+```{r}
+plots <- lapply(seq_along(metrics), function(i) {
+  plot_ly(
+    data = filter(iris_long, Metric == metrics[i]),
+    x = ~Species,
+    y = ~Value,
+    color = ~Species,
+    type = "box",
+    showlegend = (i == 1)
+  )
+})
+
+subplot(plots[[1]], plots[[2]], plots[[3]], plots[[4]], 
+        nrows = 2, shareX = TRUE, shareY = TRUE) |>
+  layout(
+    title = "Box Plots of Iris Metrics by Species",
+    showlegend = TRUE
+  )
+```
+
+## Q1.8: 2D Scatter Plot
+
+```{r}
+plot_ly(
+  data = iris_data,
+  x = ~Petal.Length,
+  y = ~Petal.Width,
+  color = ~Species,
+  type = "scatter",
+  mode = "markers"
+)
+```
+
+## Q1.9: 3D Scatter Plot
+
+```{r}
+plot_ly(
+  data = iris_data,
+  x = ~Petal.Length,
+  y = ~Petal.Width,
+  z = ~Sepal.Length,
+  color = ~Species,
+  type = "scatter3d",
+  mode = "markers"
+)
+```
+
+## Q1.10: Comment
+
+Setosa is clearly separable, while Versicolor and Virginica overlap.
+
+# Part 2: COVID-19 Dataset
+
+## Q2.1: Read `us-states.csv`
+
+```{r}
+usstates_sample <- read_csv("../data/us-states.csv")
+spec(usstates_sample)
+
+usstates <- read_csv("../data/us-states.csv", col_types = cols(
+  date = col_date(format = "%Y-%m-%d"),
+  state = col_factor(),
+  fips = col_double(),
+  cases = col_double(),
+  deaths = col_double()
+))
+```
+
+## Q2.2: Show values
+
+```{r}
+head(usstates)
+```
+
+## Q2.3: Monthly Cases
+
+```{r}
+monthly_cases <- usstates |>
+  mutate(year_month = floor_date(date, "month")) |>
+  group_by(state, year_month) |>
+  summarize(
+    new_cases = last(cases) - first(cases),
+    .groups = "drop"
+  )
+
+head(monthly_cases)
+```
+
+## Q2.4: Plot all states over time
+
+```{r}
+plot_ly(data = monthly_cases,
+        x = ~year_month,
+        y = ~new_cases,
+        color = ~state,
+        type = 'scatter',
+        mode = 'lines')
+```
+
+## Q2.5: NY State
+
+```{r}
+ny_monthly_cases <- filter(monthly_cases, state == "New York")
+
+plot_ly(data = ny_monthly_cases, 
+        x = ~year_month, 
+        y = ~new_cases, 
+        type = 'scatter', 
+        mode = 'lines+markers')
+```
+
+## Q2.6: Peak Month NY
+
+```{r}
+ny_monthly_cases |> filter(new_cases == max(new_cases))
+```
+
+## Q2.7: Choropleth map of peak month
+
+```{r}
+peak_month <- ny_monthly_cases |> filter(new_cases == max(new_cases)) |> pull(year_month)
+
+peak_month_cases <- monthly_cases |>
+  filter(year_month == peak_month) |>
+  mutate(state_abb = state.abb[match(state, state.name)],
+         state_abb = ifelse(state == "District of Columbia", "DC", state_abb))
+
+plot_ly(
+  data = peak_month_cases,
+  locations = ~state_abb,
+  locationmode = "USA-states",
+  z = ~new_cases,
+  type = "choropleth",
+  colorscale = "Viridis"
+)
+```
+
+## Q2.8: Animation
+
+```{r}
+animated_data <- monthly_cases |>
+  mutate(
+    year_month = as.character(year_month),
+    state_abb = state.abb[match(state, state.name)],
+    state_abb = ifelse(state == "District of Columbia", "DC", state_abb)
+  )
+
+plot_ly(
+  data = animated_data,
+  locations = ~state_abb,
+  locationmode = "USA-states",
+  z = ~new_cases,
+  frame = ~year_month,
+  type = "choropleth",
+  colorscale = "Viridis"
+)
+```
+
+## Q2.9: Comments
+
+- The animated map provides temporal trends.
+- Easier to compare geographically than cluttered line plots.
